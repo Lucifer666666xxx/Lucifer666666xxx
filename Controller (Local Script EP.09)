@@ -1,0 +1,133 @@
+local Players = game:GetService("Players")
+local physicsservice = game:GetService("PhysicsService")
+local replicatedstorage = game:GetService("ReplicatedStorage")
+local runservice = game:GetService("RunService")
+local userinputservice = game:GetService("UserInputService")
+
+local gold = Players.LocalPlayer:WaitForChild("Gold")
+local events = replicatedstorage:WaitForChild("Events")
+local functions = replicatedstorage:WaitForChild("Functions")
+local requestTowerFuntion = functions:WaitForChild("RequestTower")
+local tower = replicatedstorage:WaitForChild("Towers")
+local spawntowerevent = events:WaitForChild("SpawnTower")
+local camera = workspace.CurrentCamera
+local gui = script.Parent
+
+local towertospawn = nil
+local canplace = false
+local rotation = 0
+local platedTower = 0
+local maxTowers = 10
+
+local function UpdateGold()
+	gui.Gold.Text = gold.Value
+end
+UpdateGold()
+gold.Changed:Connect(UpdateGold)
+
+local function MouseRaycast(blacklist)
+	local mouseposition = userinputservice:GetMouseLocation()
+	local mouseray = camera:ViewportPointToRay(mouseposition.X,mouseposition.Y)
+	local raycastparams = RaycastParams.new()
+
+	raycastparams.FilterType = Enum.RaycastFilterType.Blacklist
+	raycastparams.FilterDescendantsInstances = blacklist
+
+	local raycastresult = workspace:Raycast(mouseray.Origin,mouseray.Direction*1000, raycastparams)
+
+	return raycastresult
+end
+
+local function RemovePlaceholderTower()
+	if towertospawn then
+		towertospawn:Destroy()
+		towertospawn = nil
+		rotation = 0
+	end
+end
+
+local function AddPlaceholderTower(name)
+	local towerExists = tower:FindFirstChild(name)
+	if towerExists then
+		RemovePlaceholderTower()
+		towertospawn = towerExists:Clone()
+		towertospawn.Parent = workspace
+
+		for i, object in ipairs(towertospawn:GetDescendants()) do
+			if object:IsA("BasePart") then
+				physicsservice:SetPartCollisionGroup(object, "Tower")
+				object.Material = Enum.Material.ForceField
+			end
+		end
+	end
+end
+
+local function ColorPlanceholderTower(color)
+	for i, object in ipairs(towertospawn:GetDescendants()) do
+		if object:IsA("BasePart") then
+			object.Color = color
+		end
+	end
+end
+
+gui.Tower.Title.Text = "Towers"..platedTower.."/"..maxTowers
+for i , tower in pairs(tower:GetChildren()) do
+	local button = gui.Tower.Template:Clone()
+	local config = tower:WaitForChild("Config")
+	button.Name = tower.Name
+	button.Image = config.Image.Texture
+	button.Visible = true
+	
+	button.LayoutOrder = config.Price.Value
+	button.Price.Text = config.Price.Value
+	
+	button.Parent = gui.Tower
+	
+	button.Activated:Connect(function()
+		local allowedToSpawn = requestTowerFuntion:InvokeServer(tower.Name)
+		if allowedToSpawn then
+			AddPlaceholderTower(tower.Name)
+		end
+	end)
+end
+
+userinputservice.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+
+	if towertospawn then
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if canplace then
+				spawntowerevent:FireServer(towertospawn.Name, towertospawn.PrimaryPart.CFrame)
+				platedTower += 1
+				gui.Tower.Title.Text = "Towers"..platedTower.."/"..maxTowers
+				RemovePlaceholderTower()
+			end
+		elseif input.KeyCode == Enum.KeyCode.R then
+			rotation += 90
+		end
+	end
+
+end)
+
+runservice.RenderStepped:Connect(function()
+	if towertospawn then
+		local result = MouseRaycast({towertospawn})
+		if result and result.Instance then
+			if result.Instance.Parent.Name == "TowerArea" then
+				canplace = true
+				ColorPlanceholderTower(Color3.new(0,1,0))
+			else
+				canplace = false
+				ColorPlanceholderTower(Color3.new(1,0,0))
+			end
+			local x = result.Position.X
+			local y = result.Position.Y + towertospawn.Humanoid.HipHeight + 4
+			local z = result.Position.Z
+
+			local cframe = CFrame.new(x,y,z) *CFrame.Angles(0,math.rad(rotation),0)
+			towertospawn:SetPrimaryPartCFrame(cframe)
+		end
+	end
+end)
